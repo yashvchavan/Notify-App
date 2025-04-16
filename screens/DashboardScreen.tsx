@@ -1,114 +1,207 @@
 "use client"
 
-import React, { useRef, useCallback } from "react"
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Dimensions } from "react-native"
+import React, { useRef, useCallback, useEffect, useState } from "react"
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Dimensions, NativeEventEmitter, NativeModules } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 import Animated, { FadeIn, FadeOut, SlideInRight, Layout } from "react-native-reanimated"
 import { useTheme } from "../context/ThemeContext"
-import {
-  Search,
-  Bell,
-  Mail,
-  MessageSquare,
-  Calendar,
-  AlertCircle,
-  Tag,
-  Trash2,
-  Sliders,
-  Link,
-  CheckCircle2,
-} from "lucide-react-native"
+import { Search, Bell, Mail, MessageSquare, Calendar, AlertCircle, Tag, Trash2, Sliders, Link, CheckCircle2, LucideIcon } from "lucide-react-native"
 import { Swipeable } from "react-native-gesture-handler"
 import type { NavigationProp, Notification } from "../type"
 
 const { width } = Dimensions.get("window")
+const { NotificationModule } = NativeModules
+const notificationEventEmitter = new NativeEventEmitter(NotificationModule)
 
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity)
+interface RealNotification {
+  id: string
+  packageName: string
+  title: string
+  text: string
+  postTime: number
+  tag?: string
+  subText?: string
+}
 
 const categories = [
   { id: "all", name: "All", icon: Bell },
-  { id: "important", name: "Important", icon: AlertCircle },
   { id: "work", name: "Work", icon: Calendar },
   { id: "social", name: "Social", icon: MessageSquare },
   { id: "promo", name: "Promotions", icon: Tag },
+  { id: "other", name: "Other", icon: AlertCircle },
 ]
 
-const mockNotifications: Notification[] = [
-  {
-    id: "1",
-    app: "Gmail",
-    sender: "John Doe",
-    title: "Project Update",
-    message: "Hey, I've finished the design mockups for the new feature.",
-    time: "10:30 AM",
-    category: "work",
-    isRead: false,
-    icon: Mail,
-  },
-  {
-    id: "2",
-    app: "WhatsApp",
-    sender: "Sarah",
-    title: "Weekend Plans",
-    message: "Are we still meeting up this Saturday for lunch?",
-    time: "9:15 AM",
-    category: "social",
-    isRead: false,
-    icon: MessageSquare,
-  },
-  {
-    id: "3",
-    app: "Calendar",
-    sender: "Team Meeting",
-    title: "Weekly Standup",
-    message: "Your meeting starts in 30 minutes.",
-    time: "Yesterday",
-    category: "work",
-    isRead: true,
-    icon: Calendar,
-  },
-  {
-    id: "4",
-    app: "Gmail",
-    sender: "Amazon",
-    title: "Your Order Has Shipped",
-    message: "Your recent order #12345 has shipped and will arrive tomorrow.",
-    time: "Yesterday",
-    category: "promo",
-    isRead: true,
-    icon: Mail,
-  },
-  {
-    id: "5",
-    app: "Slack",
-    sender: "Design Team",
-    title: "New Comment",
-    message: 'Alex commented on your design: "This looks great!"',
-    time: "2 days ago",
-    category: "work",
-    isRead: true,
-    icon: MessageSquare,
-  },
-]
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity)
+
+const formatTime = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 const DashboardScreen = () => {
   const { isDark } = useTheme()
   const navigation = useNavigation<NavigationProp>()
-  const [selectedCategory, setSelectedCategory] = React.useState("all")
-  const [notifications, setNotifications] = React.useState(mockNotifications)
-  const [searchQuery, setSearchQuery] = React.useState("")
+  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [hasPermission, setHasPermission] = useState(false)
 
   const swipeableRefs = useRef<Array<Swipeable | null>>([])
+
+  // Improved notification handling with deduplication
+  const addNotification = useCallback((newNotif: Notification) => {
+    setNotifications(prev => {
+      // Check if notification already exists
+      const exists = prev.some(existing => 
+        existing.id === newNotif.id || 
+        (existing.app === newNotif.app && 
+         existing.message === newNotif.message &&
+         Math.abs(new Date(existing.time).getTime() - new Date(newNotif.time).getTime()) < 60000)
+      );
+
+      if (!exists) {
+        return [newNotif, ...prev]
+      }
+      return prev
+    })
+  }, [])
+
+  useEffect(() => {
+    // Check permission on mount
+    checkPermission()
+
+    // Set up event listeners
+    const subscriptionPost = notificationEventEmitter.addListener(
+      'notificationPosted',
+      (notification: RealNotification) => {
+        handleNewNotification(notification)
+      }
+    )
+
+    const subscriptionRemove = notificationEventEmitter.addListener(
+      'notificationRemoved',
+      (notification: RealNotification) => {
+        handleRemovedNotification(notification)
+      }
+    )
+
+    const subscriptionActive = notificationEventEmitter.addListener(
+      'activeNotifications',
+      (data: { notifications: RealNotification[] }) => {
+        handleActiveNotifications(data.notifications)
+      }
+    )
+
+    return () => {
+      subscriptionPost.remove()
+      subscriptionRemove.remove()
+      subscriptionActive.remove()
+    }
+  }, [])
+
+  const checkPermission = async () => {
+    try {
+      const granted = await NotificationModule.isPermissionGranted()
+      setHasPermission(granted)
+      if (!granted) {
+        requestPermission()
+      }
+    } catch (error) {
+      console.error('Error checking notification permission:', error)
+    }
+  }
+
+  const requestPermission = async () => {
+    try {
+      await NotificationModule.requestPermission()
+    } catch (error) {
+      console.error('Error requesting notification permission:', error)
+    }
+  }
+
+  const handleNewNotification = (realNotif: RealNotification) => {
+    const newNotification: Notification = {
+      id: `${realNotif.packageName}:${realNotif.id}:${realNotif.tag || ''}:${realNotif.postTime}`, // Unique ID
+      app: getAppName(realNotif.packageName),
+      sender: realNotif.title || 'Unknown',
+      title: realNotif.subText || 'Notification',
+      message: realNotif.text || '',
+      time: formatTime(realNotif.postTime),
+      category: getCategory(realNotif.packageName),
+      isRead: false,
+      icon: getAppIcon(realNotif.packageName)
+    }
+
+    addNotification(newNotification)
+  }
+
+  const handleRemovedNotification = (realNotif: RealNotification) => {
+    setNotifications(prev => 
+      prev.filter(item => !item.id.startsWith(`${realNotif.packageName}:${realNotif.id}`))
+    )
+  }
+
+  const handleActiveNotifications = (realNotifs: RealNotification[]) => {
+    const mappedNotifications = realNotifs.map(realNotif => ({
+      id: `${realNotif.packageName}:${realNotif.id}:${realNotif.tag || ''}:${realNotif.postTime}`, // Consistent ID format
+      app: getAppName(realNotif.packageName),
+      sender: realNotif.title || 'Unknown',
+      title: realNotif.subText || 'Notification',
+      message: realNotif.text || '',
+      time: formatTime(realNotif.postTime),
+      category: getCategory(realNotif.packageName),
+      isRead: false,
+      icon: getAppIcon(realNotif.packageName)
+    }))
+
+    setNotifications(prev => {
+      // Filter out duplicates from new notifications
+      const newItems = mappedNotifications.filter(newNotif => 
+        !prev.some(existing => existing.id === newNotif.id)
+      )
+      return [...newItems, ...prev]
+    })
+  }
+
+  // ... rest of your component code remains the same ...
+
+  const getAppName = (packageName: string): string => {
+    const appMap: Record<string, string> = {
+      'com.whatsapp': 'WhatsApp',
+      'com.google.android.gm': 'Gmail',
+      'com.google.android.calendar': 'Calendar',
+      'com.slack': 'Slack',
+      'com.android.messaging': 'Messages'
+    }
+    return appMap[packageName] || packageName
+  }
+
+  const getAppIcon = (packageName: string): LucideIcon => {
+    const iconMap: Record<string, LucideIcon> = {
+      'com.whatsapp': MessageSquare,
+      'com.google.android.gm': Mail,
+      'com.google.android.calendar': Calendar,
+      'com.slack': MessageSquare,
+      'com.android.messaging': MessageSquare
+    }
+    return iconMap[packageName] || Bell
+  }
+
+  const getCategory = (packageName: string): string => {
+    if (packageName.includes('mail') || packageName.includes('gmail')) return 'work'
+    if (packageName.includes('whatsapp') || packageName.includes('messaging')) return 'social'
+    if (packageName.includes('slack')) return 'work'
+    if (packageName.includes('shopping') || packageName.includes('amazon')) return 'promo'
+    return 'other'
+  }
 
   const filteredNotifications = React.useMemo(() => {
     let filtered = notifications
 
-    // Filter by category
     if (selectedCategory !== "all") {
       filtered = filtered.filter((item) => item.category === selectedCategory)
     }
 
-    // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
