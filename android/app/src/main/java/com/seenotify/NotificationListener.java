@@ -90,17 +90,8 @@ public class NotificationListener extends NotificationListenerService {
 
     private boolean shouldSkipNotification(StatusBarNotification sbn) {
         // Skip muted notifications
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = getSystemService(NotificationManager.class)
-                .getNotificationChannel(sbn.getNotification().getChannelId());
-            if (channel != null && channel.getImportance() == IMPORTANCE_NONE) {
-                return true;
-            }
-        }
-        
-        // Skip hotspot notifications
-        return sbn.getPackageName().equals("android") && 
-               sbn.getNotification().extras.getString("android.text", "").contains("hotspot");
+
+        return false;
     }
 
     private WritableMap convertNotification(StatusBarNotification sbn) {

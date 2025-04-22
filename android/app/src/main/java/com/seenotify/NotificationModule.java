@@ -21,6 +21,7 @@ public class NotificationModule extends ReactContextBaseJavaModule {
         NotificationListener.setReactContext(reactContext);
     }
 
+
     @NonNull
     @Override
     public String getName() {

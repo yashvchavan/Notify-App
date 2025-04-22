@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useRef, useCallback, useEffect, useState } from "react"
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Dimensions, NativeEventEmitter, NativeModules } from "react-native"
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Dimensions, NativeEventEmitter, NativeModules, EmitterSubscription } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 import Animated, { FadeIn, FadeOut, SlideInRight, Layout } from "react-native-reanimated"
 import { useTheme } from "../context/ThemeContext"
@@ -65,6 +65,64 @@ const DashboardScreen = () => {
       return prev
     })
   }, [])
+
+  useEffect(() => {
+    const checkPermissions = async () => {
+      try {
+        const granted = await NotificationModule.isPermissionGranted();
+        setHasPermission(granted);
+        if (!granted) {
+          const result = await NotificationModule.requestPermission();
+          setHasPermission(result);
+        }
+      } catch (error) {
+        console.error('Permission check failed:', error);
+      }
+    };
+  
+    checkPermissions();
+  }, []);
+
+  // Update your useEffect in DashboardScreen
+  useEffect(() => {
+    const subscriptions: EmitterSubscription[] = [];
+
+    // Check if emitter is properly connected
+    console.log('NotificationModule:', NotificationModule);
+    console.log('notificationEventEmitter:', notificationEventEmitter);
+
+    const postSub = notificationEventEmitter.addListener(
+      'notificationPosted',
+      (notification) => {
+        console.log('Received notificationPosted:', notification);
+        handleNewNotification(notification);
+      }
+    );
+    subscriptions.push(postSub);
+
+    const removeSub = notificationEventEmitter.addListener(
+      'notificationRemoved',
+      (notification) => {
+        console.log('Received notificationRemoved:', notification);
+        handleRemovedNotification(notification);
+      }
+    );
+    subscriptions.push(removeSub);
+
+    const activeSub = notificationEventEmitter.addListener(
+      'activeNotifications',
+      (data) => {
+        console.log('Received activeNotifications:', data);
+        handleActiveNotifications(data.notifications);
+      }
+    );
+    subscriptions.push(activeSub);
+
+
+    return () => {
+      subscriptions.forEach(sub => sub.remove());
+    };
+  }, []);
 
   useEffect(() => {
     // Check permission on mount
@@ -418,7 +476,7 @@ const DashboardScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 60,
+    paddingTop: 20,
   },
   header: {
     flexDirection: "row",

@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from "react-native"
 import Animated, {
   useSharedValue,
@@ -83,10 +84,30 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     }, 300)
   }
 
-  const handleAuth = () => {
-    // For demo purposes, just call onLogin
-    onLogin()
-  }
+  const handleAuth = async () => {
+    try {
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const response = await fetch(`http://192.168.54.202:5000${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include' // Important for sessions to work
+      });
+  
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Authentication failed');
+      }
+  
+      // Successful authentication
+      onLogin();
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'An unknown error occurred');
+    }
+  };
 
   const getTextColor = () => (isDark ? "#ffffff" : "#1e293b")
   const getPlaceholderColor = () => (isDark ? "#6b7280" : "#94a3b8")

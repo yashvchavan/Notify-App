@@ -15,6 +15,7 @@ import InsightsScreen from "../screens/InsightsScreen"
 import SettingsScreen from "../screens/SettingsScreen"
 import ProfileScreen from "../screens/ProfileScreen"
 import CategoriesScreen from "../screens/CategoriesScreen"
+import AuthScreen from "../screens/AuthScreen"
 
 // Create navigators
 const Tab = createBottomTabNavigator()
@@ -59,6 +60,18 @@ function AnalyticsStack() {
   )
 }
 
+
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen 
+        name="Auth" 
+        component={() => <AuthScreen onLogin={() => { /* Default login action */ }} />} 
+      />
+    </Stack.Navigator>
+  );
+}
+
 // Settings Stack Navigator
 function SettingsStack() {
   return (
@@ -81,7 +94,6 @@ function CategoriesStack() {
 // Main Navigator Component
 export default function MainNavigator() {
   const { isDark } = useTheme()
-
   return (
     <Tab.Navigator
       screenOptions={{
@@ -157,3 +169,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 })
+
+
